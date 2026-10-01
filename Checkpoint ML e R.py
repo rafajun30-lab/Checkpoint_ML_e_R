@@ -15,8 +15,8 @@ Como executar:
     2) pip install pandas numpy matplotlib scipy scikit-learn
     3) python checkpoint_wines.py
     Os graficos sao salvos na pasta "graficos".
-    Se o CSV nao for encontrado, o script usa o dataset Wine do scikit-learn
-    (mesmos 178 vinhos e 13 variaveis, sem a coluna de classe).
+    Se o CSV nao for encontrado, o script usa o dataset Wine do kaggle
+    (https://www.kaggle.com/datasets/harrywang/wine-dataset-for-clustering).
 """
 
 import os
@@ -93,12 +93,18 @@ print(df.dtypes)
 print("\nValores nulos por coluna:")
 print(df.isnull().sum())
 
+
+
+
 # ======================================================================
 # PARTE 1 - STATISTICAL COMPUTING (Python)
 # Variaveis quantitativas escolhidas:
 #   - alcohol    (teor alcoolico)
 #   - malic_acid (acido malico)
 # ======================================================================
+
+
+
 VARIAVEIS = ["alcohol", "malic_acid"]
 
 # ----------------------------------------------------------------------
@@ -153,6 +159,7 @@ salvar("parte1a_histogramas_boxplots.png")
 # ----------------------------------------------------------------------
 # 1b) ANALISE DESCRITIVA: tendencia central, dispersao e separatrizes
 # ----------------------------------------------------------------------
+
 titulo("PARTE 1b - ANALISE DESCRITIVA")
 
 resumo = {}
@@ -267,9 +274,16 @@ salvar("parte1c_normal_alcohol.png")
 # - A probabilidade condicional mostra se ter mais acido malico esta associado
 #   a um teor alcoolico maior ou menor.
 
+
+
+
+
 # ======================================================================
 # PARTE 2 - MACHINE LEARNING & MODELLING (K-means)
 # ======================================================================
+
+
+
 
 # ----------------------------------------------------------------------
 # 2a) INTRODUCAO
