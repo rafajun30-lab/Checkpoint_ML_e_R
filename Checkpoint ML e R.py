@@ -276,14 +276,9 @@ salvar("parte1c_normal_alcohol.png")
 
 
 
-
-
 # ======================================================================
 # PARTE 2 - MACHINE LEARNING & MODELLING (K-means)
 # ======================================================================
-
-
-
 
 # ----------------------------------------------------------------------
 # 2a) INTRODUCAO
@@ -291,7 +286,8 @@ salvar("parte1c_normal_alcohol.png")
 titulo("PARTE 2a - INTRODUCAO")
 print(
     "Problema: temos 178 vinhos descritos por 13 caracteristicas quimicas e nao\n"
-    "sabemos previamente a qual tipo cada um pertence (aprendizado NAO supervisionado).\n"
+    "sabemos previamente a qual tipo cada um pertence (aprendizado NAO supervisionado:\n"
+    "nao existe uma coluna alvo y).\n"
     "Solucao proposta: usar o algoritmo K-means para agrupar os vinhos mais\n"
     "semelhantes entre si, definir o numero ideal de grupos (Elbow + Silhouette)\n"
     "e interpretar o perfil quimico de cada grupo (teor alcoolico, acidez etc.)."
@@ -302,141 +298,216 @@ print(
 # ----------------------------------------------------------------------
 titulo("PARTE 2b - PRE-PROCESSAMENTO")
 
-# 1) Nulos: verificar e tratar (se houver, remove as linhas)
+# Tratamento de nulos
 print("Nulos antes:", int(df.isnull().sum().sum()))
 df_ml = df.dropna().copy()
 print("Nulos depois:", int(df_ml.isnull().sum().sum()), "| linhas:", len(df_ml))
 
-# 2) Selecao de features: o dataset ja nao possui coluna de classe (rotulo),
-#    entao usamos todas as variaveis quimicas. Para simplificar e facilitar a
-#    interpretacao, poderiamos usar so um subconjunto; aqui mantemos as 13.
+# Selecao de features
 features = list(df_ml.columns)
 print("Features utilizadas:", features)
 
-# 3) Padronizacao (z-score): K-means usa distancia euclidiana, e variaveis
-#    como 'proline' (centenas/milhares) dominariam variaveis como 'hue' (~1).
+# Padronizacao (StandardScaler)
 scaler = StandardScaler()
-X = scaler.fit_transform(df_ml[features])
-print("Media apos padronizar (~0):", np.round(X.mean(axis=0), 3))
-print("Desvio apos padronizar (~1):", np.round(X.std(axis=0), 3))
+X_scaled = scaler.fit_transform(df_ml[features])
+print("Media apos padronizar (~0):", np.round(X_scaled.mean(axis=0), 3))
+print("Desvio apos padronizar (~1):", np.round(X_scaled.std(axis=0), 3))
+
+# Visualizacao inicial com PCA
+pca = PCA(n_components=2, random_state=RANDOM_STATE)
+X_pca = pca.fit_transform(X_scaled)
+print("Variancia explicada pelo PCA (PC1, PC2):",
+      np.round(pca.explained_variance_ratio_ * 100, 1), "%")
+
+plt.figure(figsize=(7, 5))
+plt.scatter(X_pca[:, 0], X_pca[:, 1], alpha=0.8)
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("Visualizacao inicial dos dados com PCA")
+salvar("parte2b_pca_inicial.png")
 
 # ----------------------------------------------------------------------
-# 2c) AJUSTE DO K-MEANS (exemplo inicial com k=3 antes de escolher o melhor k)
+# 2c) AJUSTE DO K-MEANS
 # ----------------------------------------------------------------------
 titulo("PARTE 2c - AJUSTE K-MEANS")
-kmeans_teste = KMeans(n_clusters=3, init="k-means++", n_init=10,
-                      random_state=RANDOM_STATE)
-kmeans_teste.fit(X)
-print("Ajuste inicial com k=3 -> inercia:", round(kmeans_teste.inertia_, 2))
-print("Tamanho dos grupos:", np.bincount(kmeans_teste.labels_))
+# Definicao do modelo K-Means
+modelo_base = KMeans(random_state=RANDOM_STATE, n_init=10)
+print("Modelo base (k sera definido a seguir):", modelo_base)
 
 # ----------------------------------------------------------------------
-# 2d) ELBOW E SILHOUETTE - numero ideal de grupos
+# 2d) ELBOW E SILHOUETTE SCORE - numero ideal de grupos
 # ----------------------------------------------------------------------
 titulo("PARTE 2d - ELBOW E SILHOUETTE SCORE")
-ks = range(2, 11)
+
+# Tabela de inercia e silhouette para k = 2..10
+ks = list(range(2, 11))
 inercias, silhuetas = [], []
 for k in ks:
-    km = KMeans(n_clusters=k, init="k-means++", n_init=10,
-                random_state=RANDOM_STATE)
-    rotulos = km.fit_predict(X)
+    km = KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init=10)
+    rotulos = km.fit_predict(X_scaled)
     inercias.append(km.inertia_)
-    silhuetas.append(silhouette_score(X, rotulos))
+    silhuetas.append(silhouette_score(X_scaled, rotulos))
+print(pd.DataFrame({"k": ks, "inercia": inercias,
+                    "silhouette": silhuetas}).round(4).to_string(index=False))
 
-resultados = pd.DataFrame({"k": list(ks), "inercia": inercias,
-                           "silhouette": silhuetas}).round(4)
-print(resultados.to_string(index=False))
 
-fig, eixos = plt.subplots(1, 2, figsize=(12, 4.5))
-eixos[0].plot(list(ks), inercias, marker="o")
-eixos[0].set_title("Metodo Elbow (cotovelo)")
-eixos[0].set_xlabel("Numero de grupos (k)")
-eixos[0].set_ylabel("Inercia (WCSS)")
-eixos[1].plot(list(ks), silhuetas, marker="o", color="tab:green")
-eixos[1].set_title("Silhouette Score")
-eixos[1].set_xlabel("Numero de grupos (k)")
-eixos[1].set_ylabel("Silhouette medio")
-salvar("parte2d_elbow_silhouette.png")
+def k_cotovelo(ks, inercias):
+    """Calcula o k do cotovelo."""
+    quedas = -np.diff(inercias)          # quanto a inercia cai de k para k+1
+    curvatura = quedas[:-1] - quedas[1:]  # desaceleracao da queda em cada k
+    return ks[1:-1][int(np.argmax(curvatura))]
 
-k_silhouette = list(ks)[int(np.argmax(silhuetas))]
-print(f"\nMelhor k pelo Silhouette: {k_silhouette} "
+
+# --- Metodo do cotovelo (Elbow) ---
+k_elbow = None
+if USA_YELLOWBRICK:
+    try:
+        elbow = KElbowVisualizer(KMeans(random_state=RANDOM_STATE, n_init=10),
+                                 k=(2, 10), timings=False)
+        elbow.fit(X_scaled)
+        elbow.finalize()
+        k_elbow = elbow.elbow_value_
+        salvar("parte2d_elbow.png")
+    except Exception as erro:
+        print("Yellowbrick indisponivel para o Elbow, usando matplotlib:", erro)
+        plt.close("all")
+        k_elbow = None
+if k_elbow is None:
+    k_elbow = k_cotovelo(ks, inercias)
+    plt.figure(figsize=(8, 5))
+    plt.plot(ks, inercias, marker="o")
+    plt.axvline(k_elbow, linestyle="--", color="gray", label=f"cotovelo k={k_elbow}")
+    plt.xlabel("Numero de grupos (k)")
+    plt.ylabel("Inercia (distortion score)")
+    plt.title("Metodo do cotovelo (Elbow) - K-Means")
+    plt.legend()
+    salvar("parte2d_elbow.png")
+print(f"\nK sugerido pelo cotovelo: {k_elbow}")
+
+# --- Silhouette: grafico de silhouette para k = 2..6 ---
+fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+axes = axes.flatten()
+for i, k in enumerate(range(2, 7)):
+    km = KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init=10)
+    feito = False
+    if USA_YELLOWBRICK:
+        try:
+            vis = SilhouetteVisualizer(km, ax=axes[i])
+            vis.fit(X_scaled)
+            vis.finalize()
+            feito = True
+        except Exception:
+            axes[i].clear()
+    if not feito:
+        rotulos = km.fit_predict(X_scaled)
+        sil_amostras = silhouette_samples(X_scaled, rotulos)
+        y_inf = 10
+        for c in range(k):
+            vals = np.sort(sil_amostras[rotulos == c])
+            axes[i].fill_betweenx(np.arange(y_inf, y_inf + len(vals)), 0, vals, alpha=0.7)
+            y_inf += len(vals) + 10
+        axes[i].axvline(silhouette_score(X_scaled, rotulos), color="red", linestyle="--")
+        axes[i].set_xlabel("Coeficiente de silhouette")
+        axes[i].set_yticks([])
+    axes[i].set_title(f"k = {k}")
+fig.delaxes(axes[-1])  # remove o 6o espaco vazio
+salvar("parte2d_silhouette_k2_a_k6.png")
+
+# --- Escolha do k ---
+k_silhouette = ks[int(np.argmax(silhuetas))]
+print(f"K com maior silhouette medio: {k_silhouette} "
       f"(score = {max(silhuetas):.4f})")
 
-# Escolha do k final: o cotovelo da curva de inercia e o maior silhouette
-# apontam para k = 3 (o dataset e composto por 3 tipos/cultivares de vinho).
-K_FINAL = 3
-print(f"K escolhido: {K_FINAL}")
+# Escolha do k final (Elbow e Silhouette)
+k_ideal = 3
+print(f"K escolhido: {k_ideal}")
 
 # ----------------------------------------------------------------------
 # 2e) ANALISE DOS GRUPOS
 # ----------------------------------------------------------------------
 titulo("PARTE 2e - ANALISE DOS GRUPOS")
-kmeans = KMeans(n_clusters=K_FINAL, init="k-means++", n_init=10,
-                random_state=RANDOM_STATE)
-df_ml["grupo"] = kmeans.fit_predict(X)
+kmeans = KMeans(n_clusters=k_ideal, random_state=RANDOM_STATE, n_init=10)
+kmeans_labels = kmeans.fit_predict(X_scaled)
 
-# Como os numeros dos grupos sao arbitrarios, reordenamos pelo teor alcoolico
-# medio (grupo 1 = menor teor, grupo 3 = maior) para facilitar a leitura.
-ordem = df_ml.groupby("grupo")["alcohol"].mean().sort_values().index
+# Reordenacao dos grupos por teor alcoolico medio
+ordem = df_ml.assign(c=kmeans_labels).groupby("c")["alcohol"].mean().sort_values().index
 mapa = {antigo: novo + 1 for novo, antigo in enumerate(ordem)}
-df_ml["grupo"] = df_ml["grupo"].map(mapa)
+kmeans_labels = np.array([mapa[l] for l in kmeans_labels])
+centros_ordenados = kmeans.cluster_centers_[list(ordem)]  # mesma ordem dos grupos
 
+df_kmeans = df_ml.copy()
+df_kmeans["cluster_kmeans"] = kmeans_labels
 print("Quantidade de vinhos por grupo:")
-print(df_ml["grupo"].value_counts().sort_index())
+print(df_kmeans["cluster_kmeans"].value_counts().sort_index())
 
-perfil = df_ml.groupby("grupo")[features].mean().round(2)
+# Silhouette medio do modelo escolhido
+sil_kmeans = silhouette_score(X_scaled, kmeans_labels)
+print("\nSilhouette score do K-Means:", round(sil_kmeans, 4))
+
+# --- Clusters no plano do PCA, com os centroides ---
+centroides_pca = pca.transform(centros_ordenados)
+plt.figure(figsize=(7, 5))
+for g in sorted(df_kmeans["cluster_kmeans"].unique()):
+    m = kmeans_labels == g
+    plt.scatter(X_pca[m, 0], X_pca[m, 1], alpha=0.85, label=f"Grupo {g}")
+plt.scatter(centroides_pca[:, 0], centroides_pca[:, 1], c="black", s=200,
+            marker="X", label="Centroides")
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title(f"K-Means com k={k_ideal} - visualizacao via PCA + centroides")
+plt.legend()
+salvar("parte2e_clusters_pca.png")
+
+# --- Medias das features por cluster (valores originais) ---
+medias_kmeans = df_kmeans.groupby("cluster_kmeans")[features].mean().round(2)
 print("\nMedia de cada caracteristica por grupo (valores originais):")
-print(perfil.T)
+print(medias_kmeans.T)
 
-# Perguntas do enunciado
-g_alcool = perfil["alcohol"].idxmax()
-g_alcool_min = perfil["alcohol"].idxmin()
-g_acido = perfil["malic_acid"].idxmax()
-g_cinza_min = perfil["ash"].idxmin()
+# --- Boxplots das features por cluster (dispersao) ---
+n_cols = 3
+n_rows = int(np.ceil(len(features) / n_cols))
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 4 * n_rows))
+axes = axes.flatten()
+for i, feature in enumerate(features):
+    sns.boxplot(data=df_kmeans, x="cluster_kmeans", y=feature, ax=axes[i])
+    axes[i].set_title(feature)
+for j in range(i + 1, len(axes)):
+    fig.delaxes(axes[j])
+salvar("parte2e_boxplots_por_cluster.png")
+
+# --- Centroides no espaco escalado ---
+centroides = pd.DataFrame(
+    centros_ordenados, columns=features,
+    index=[f"grupo_{g}" for g in range(1, k_ideal + 1)]
+)
+print("\nCentroides (espaco padronizado):")
+print(centroides.T.round(2))
+
+# --- Respostas as perguntas do enunciado ---
+g_acido = medias_kmeans["malic_acid"].idxmax()
+g_alcool_max = medias_kmeans["alcohol"].idxmax()
+g_alcool_min = medias_kmeans["alcohol"].idxmin()
+g_cinza_min = medias_kmeans["ash"].idxmin()
 print("\n--- Respostas ---")
-print(f"Qual teor alcoolico dos vinhos de cada grupo?")
-for g in perfil.index:
-    sub = df_ml[df_ml["grupo"] == g]["alcohol"]
+print("Qual teor alcoolico dos vinhos de cada grupo?")
+for g in medias_kmeans.index:
+    sub = df_kmeans[df_kmeans["cluster_kmeans"] == g]["alcohol"]
     print(f"  Grupo {g}: media = {sub.mean():.2f} "
           f"(min {sub.min():.2f} | max {sub.max():.2f})")
 print(f"Grupo com vinhos mais acidos (maior acido malico): Grupo {g_acido} "
-      f"({perfil.loc[g_acido, 'malic_acid']:.2f})")
-print(f"Grupo com maior teor alcoolico: Grupo {g_alcool}; "
+      f"({medias_kmeans.loc[g_acido, 'malic_acid']:.2f})")
+print(f"Grupo com maior teor alcoolico: Grupo {g_alcool_max}; "
       f"menor: Grupo {g_alcool_min}")
 print(f"Grupo com menos cinzas (ash): Grupo {g_cinza_min} "
-      f"({perfil.loc[g_cinza_min, 'ash']:.2f})")
+      f"({medias_kmeans.loc[g_cinza_min, 'ash']:.2f})")
 
-# Descricao automatica de cada grupo (compara com a media geral)
+# Destaques de cada grupo em relacao a media geral (em desvios-padrao)
+z = (medias_kmeans - df_kmeans[features].mean()) / df_kmeans[features].std()
 print("\nPerfil resumido de cada grupo (destaques vs. media geral):")
-z = (perfil - df_ml[features].mean()) / df_ml[features].std()
-for g in perfil.index:
+for g in z.index:
     altos = z.loc[g].sort_values(ascending=False).head(3).index.tolist()
     baixos = z.loc[g].sort_values().head(3).index.tolist()
     print(f"  Grupo {g}: mais ALTO em {altos} | mais BAIXO em {baixos}")
-
-# Graficos: PCA 2D dos grupos e boxplot do teor alcoolico por grupo
-pca = PCA(n_components=2, random_state=RANDOM_STATE)
-X_pca = pca.fit_transform(X)
-centros_pca = pca.transform(kmeans.cluster_centers_)
-var_exp = pca.explained_variance_ratio_ * 100
-
-fig, eixos = plt.subplots(1, 2, figsize=(13, 5))
-for g in sorted(df_ml["grupo"].unique()):
-    m = df_ml["grupo"].values == g
-    eixos[0].scatter(X_pca[m, 0], X_pca[m, 1], label=f"Grupo {g}", alpha=0.75)
-eixos[0].scatter(centros_pca[:, 0], centros_pca[:, 1], c="black", marker="X",
-                 s=200, label="Centroides")
-eixos[0].set_title("Grupos de vinhos (projecao PCA)")
-eixos[0].set_xlabel(f"PC1 ({var_exp[0]:.1f}%)")
-eixos[0].set_ylabel(f"PC2 ({var_exp[1]:.1f}%)")
-eixos[0].legend()
-
-dados_box = [df_ml[df_ml["grupo"] == g]["alcohol"] for g in sorted(df_ml["grupo"].unique())]
-eixos[1].boxplot(dados_box)
-eixos[1].set_xticklabels([f"Grupo {g}" for g in sorted(df_ml["grupo"].unique())])
-eixos[1].set_title("Teor alcoolico por grupo")
-eixos[1].set_ylabel("alcohol")
-salvar("parte2e_grupos.png")
 
 # Heatmap do perfil padronizado dos grupos
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -452,17 +523,9 @@ fig.colorbar(im, label="Desvios-padrao em relacao a media geral")
 ax.set_title("Perfil dos grupos (valores padronizados)")
 salvar("parte2e_heatmap_perfil.png")
 
-# Conclusao (comentarios):
-# - O K-means separou os vinhos em 3 grupos com perfis quimicos distintos.
-# - Grupo 1: menor teor alcoolico (~12,3), pouca cor e prolina baixa.
-# - Grupo 2: teor alcoolico intermediario (~13,1), o mais acido (acido malico
-#   ~3,3), cor muito intensa e poucos flavonoides.
-# - Grupo 3: maior teor alcoolico (~13,7), muita prolina, flavonoides e fenois,
-#   e menos acido malico.
-# - O silhouette (~0,28) indica grupos moderadamente separados, com alguma
-#   sobreposicao entre vinhos de perfis proximos.
-# (Os numeros acima vem da execucao com random_state=42; confira nas tabelas.)
-
-df_ml.to_csv("vinhos_com_grupos.csv", index=False)
-print("\nArquivo 'vinhos_com_grupos.csv' salvo com a coluna 'grupo'.")
+# Exportacao do resultado
+df_kmeans.to_csv("vinhos_com_grupos.csv", index=False)
+print("\nArquivo 'vinhos_com_grupos.csv' salvo com a coluna 'cluster_kmeans'.")
 print("Fim da execucao.")
+
+
